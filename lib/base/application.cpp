@@ -879,6 +879,10 @@ void Application::ExceptionHandler()
 				<< "\n";
 		}
 
+		ofs << "Stacktrace:\n"
+			<< boost::stacktrace::stacktrace()
+			<< "\n";
+
 		DisplayBugMessage(ofs);
 
 		ofs.close();

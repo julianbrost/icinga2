@@ -34,6 +34,10 @@
 
 using namespace icinga;
 
+#ifdef _WIN32
+const DWORD EXCEPTION_CODE_CXX_EXCEPTION = 0xe06d7363;
+#endif
+
 REGISTER_TYPE(Application);
 
 boost::signals2::signal<void ()> Application::OnReopenLogs;
@@ -54,6 +58,10 @@ char **Application::m_ArgV;
 double Application::m_StartTime;
 bool Application::m_ScriptDebuggerEnabled = false;
 double Application::m_LastReloadFailed;
+
+#ifdef _WIN32
+static LPTOP_LEVEL_EXCEPTION_FILTER l_DefaultUnhandledExceptionFilter = nullptr;
+#endif
 
 /**
  * Constructor for the Application class.
@@ -883,6 +891,15 @@ void Application::ExceptionHandler()
 #ifdef _WIN32
 LONG CALLBACK Application::SEHUnhandledExceptionFilter(PEXCEPTION_POINTERS exi)
 {
+	/* If an unhandled C++ exception occurs with both a termination handler (std::set_terminate()) and an unhandled
+	 * SEH filter (SetUnhandledExceptionFilter()) set, the latter one is called, however our termination handler is
+	 * better suited for dealing with C++ exceptions. In this case, the SEH exception will have a specific code and
+	 * we can just call the default filter function which will take care of calling the termination handler.
+	 */
+	if (exi->ExceptionRecord->ExceptionCode == EXCEPTION_CODE_CXX_EXCEPTION) {
+		return l_DefaultUnhandledExceptionFilter(exi);
+	}
+
 	if (l_InExceptionHandler)
 		return EXCEPTION_CONTINUE_SEARCH;
 
@@ -936,7 +953,7 @@ void Application::InstallExceptionHandlers()
 	sa.sa_handler = &Application::SigAbrtHandler;
 	sigaction(SIGABRT, &sa, nullptr);
 #else /* _WIN32 */
-	SetUnhandledExceptionFilter(&Application::SEHUnhandledExceptionFilter);
+	l_DefaultUnhandledExceptionFilter = SetUnhandledExceptionFilter(&Application::SEHUnhandledExceptionFilter);
 #endif /* _WIN32 */
 }
 
